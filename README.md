@@ -1,12 +1,6 @@
 ## A Three-Phase Deep Learning Framework for Automated Infarct Segmentation in Preclinical Stroke Imaging
 
-Public Snippets Only. This repository intentionally publishes **selected fragments (model skeletons and minimal training interfaces) for U-Net, Deep U-Net, RA-UNet, and ResNet-50–based fine-tuning** to support peer review and reproducibility claims.  
-
-Full implementations (data pipeline, complete training loops, augmentation policy, metrics, callbacks incl. ECE, and evaluation) are withheld and available upon request under the Custom Research License.
-
-Contact: **abhishekjha2611@gmail.com**
-
----
+Public Snippets Only. This repository intentionally publishes selected fragments (model skeletons and minimal training interfaces) for U-Net, Deep U-Net, RA-UNet, and ResNet-50–based fine-tuning  to support peer review and reproducibility claims.  
 
 ### Models Covered (snippet-only)
 - Deep U-Net
@@ -42,4 +36,6 @@ This repository includes **snippet-only** fine-tuning interfaces:
 - Runner: `src/train_deep_unet_snippet.py`  
 - Config:`configs/deep_unet_snippet.yaml`  
 
-Note: Full implementations available upon request** (abhishekjha2611@gmail.com).
+Note: Full implementations (data pipeline, complete training loops, augmentation policy, metrics, callbacks incl. ECE, and evaluation) are withheld and available upon request under the Custom Research License.
+
+Contact: **abhishekjha2611@gmail.com**
