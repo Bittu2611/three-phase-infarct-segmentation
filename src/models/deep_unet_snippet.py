@@ -13,9 +13,7 @@ def _conv_block(x, f):
 U-Net (public snippet)
 
 This file intentionally exposes only the interface for the U-Net constructor.
-The full architecture (encoder/decoder depth, skip connections, normalization,
-dropout policy), optimizer/loss, and full metric suite (IoU, Dice, entropy,
-KL divergence, perplexity, calibration, etc.) are **withheld** and available
+The full architecture is available
 upon request under the Custom Research License.
 
 Contact: abhishekjha2611@gmail.com
