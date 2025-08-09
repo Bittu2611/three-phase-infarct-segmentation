@@ -20,7 +20,7 @@ Contact: **abhishekjha2611@gmail.com**
 ## Fine-tuning (Snippet-Only)
 This repository includes **snippet-only** fine-tuning interfaces:
 
-- U-Net (ResNet-50 encoder)**: `models/unet/finetune_resnet50_snippet.py`  
+- U-Net (ResNet-50 encoder): `models/unet/finetune_resnet50_snippet.py`  
   Runner: `src/finetune_unet_resnet50_snippet.py`  
   Config: `configs/unet_resnet50_finetune.yaml`
 
