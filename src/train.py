@@ -31,11 +31,8 @@ def run_from_config(cfg_path):
         model.save(os.path.join(out, f"model_{expid}.keras"))
         save_history_plot(hist, os.path.join(out, f"plot_{expid}.png"))
 
-        df = pd.DataFrame(hist.history); df['experiment'] = expid
-        if os.path.exists(master_csv):
-            pd.concat([pd.read_csv(master_csv), df], ignore_index=True).to_csv(master_csv, index=False)
-        else:
-            df.to_csv(master_csv, index=False)
+       --------------------------------------------------
+       --------------------------------------------------
 
 if __name__ == "__main__":
     # default run: use the provided config path
