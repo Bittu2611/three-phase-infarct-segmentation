@@ -26,7 +26,7 @@ This repository includes **snippet-only** fine-tuning interfaces:
   Runner: `src/finetune_unet_resnet50_snippet.py`  
   Config: `configs/unet_resnet50_finetune.yaml`
 
-- RA-UNet (ResNet-50 encoder)**: `models/raunet/finetune_resnet50_snippet.py`  
+- RA-UNet (ResNet-50 encoder): `models/raunet/finetune_resnet50_snippet.py`  
   Runner: `src/finetune_raunet_resnet50_snippet.py`  
   Config: `configs/raunet_resnet50_finetune.yaml`
 
