@@ -40,5 +40,8 @@ Decoder wiring, attention blocks, training loop, callbacks, and logging are **wi
 Full implementations available upon request** (abhishekjha2611@gmail.com).
 
 # Full Factorial design of Experiment based model development (Phaese -II)
--Deep U-Net: 
+-Deep U-Net (5-level / 9-layer, Full-Factorial DOE)**  
+- Model file: `models/unet/deep_unet_snippet.py`  
+- Runner: `src/train_deep_unet_snippet.py`  
+- Config:`configs/deep_unet_snippet.yaml`  
 
