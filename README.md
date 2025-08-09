@@ -36,12 +36,10 @@ This repository includes **snippet-only** fine-tuning interfaces:
   Runner: `src/finetune_raunet_resnet50_snippet.py`  
   Config: `configs/raunet_resnet50_finetune.yaml`
 
-Decoder wiring, attention blocks, training loop, callbacks, and logging are **withheld**.  
-Full implementations available upon request** (abhishekjha2611@gmail.com).
-
 # Full Factorial design of Experiment based model development (Phaese -II)
 -Deep U-Net (5-level / 9-layer, Full-Factorial DOE)**  
 - Model file: `models/unet/deep_unet_snippet.py`  
 - Runner: `src/train_deep_unet_snippet.py`  
 - Config:`configs/deep_unet_snippet.yaml`  
 
+Note: Full implementations available upon request** (abhishekjha2611@gmail.com).
