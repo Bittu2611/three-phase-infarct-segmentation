@@ -4,7 +4,7 @@ Training entrypoint (public snippet)
 A complete implementation is available
 upon reasonable request under the Custom Research License.
 
-Contact: abhishekjha2611@gmail.com
+Contact: abhishek-jha@uiowa.edu
 """
 
 import yaml
