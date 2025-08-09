@@ -1,7 +1,7 @@
 """
 RA-UNet (ResNet-50 encoder) – fine-tuning snippet
 Residual attention blocks, gating, decoder wiring, and full training stack withheld.
-Contact: abhishekjha2611@gmail.com
+Contact: abhishek-jha@uiowa.edu
 """
 
 import tensorflow as tf
