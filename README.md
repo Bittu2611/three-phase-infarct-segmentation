@@ -31,7 +31,7 @@ This repository includes **snippet-only** fine-tuning interfaces:
   Config: `configs/raunet_resnet50_finetune.yaml`
 
 # Full Factorial design of experiment based model development (Phase -II)
--Deep U-Net (5-level / 9-layer, Full-Factorial DOE)**  
+-Deep U-Net (5-level / 9-layer, Full-Factorial DOE)
 - Model file: `models/unet/deep_unet_snippet.py`  
 - Runner: `src/train_deep_unet_snippet.py`  
 - Config:`configs/deep_unet_snippet.yaml`  
