@@ -39,6 +39,6 @@ This repository includes **snippet-only** fine-tuning interfaces:
 Decoder wiring, attention blocks, training loop, callbacks, and logging are **withheld**.  
 Full implementations available upon request** (abhishekjha2611@gmail.com).
 
-# Full cactorial design of Experiment based model development (Phaese -II)
+# Full Factorial design of Experiment based model development (Phaese -II)
 -Deep U-Net: 
 
