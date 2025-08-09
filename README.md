@@ -15,7 +15,15 @@ Contact: **abhishekjha2611@gmail.com**
 - U-Net (ResNet-50 encoder) – fine-tuning interface (decoder & training loop withheld)
 - RA-UNet (ResNet-50 encoder) – fine-tuning interface (attention & training loop withheld)
 
----
+
+## Baseline Training (Snippet-Only)-Phae-I
+- U-Net snippets: `models/unet/snippets.py`  
+  Runner: `src/train_unet_snippet.py`  
+  Config: `configs/unet_snippet.yaml`
+
+- RA-UNet snippets: `models/raunet/snippets.py`  
+  Runner: `src/train_raunet_snippet.py`  
+  Config: `configs/raunet_snippet.yaml`
 
 ## Fine-tuning (Snippet-Only)
 This repository includes **snippet-only** fine-tuning interfaces:
@@ -31,16 +39,6 @@ This repository includes **snippet-only** fine-tuning interfaces:
 Decoder wiring, attention blocks, training loop, callbacks, and logging are **withheld**.  
 Full implementations available upon request** (abhishekjha2611@gmail.com).
 
----
-
-## Baseline Training (Snippet-Only)
-- U-Net snippets: `models/unet/snippets.py`  
-  Runner: `src/train_unet_snippet.py`  
-  Config: `configs/unet_snippet.yaml`
-
-- RA-UNet snippets: `models/raunet/snippets.py`  
-  Runner: `src/train_raunet_snippet.py`  
-  Config: `configs/raunet_snippet.yaml`
-
-- Deep U-Net scaffold: see `models/unet/snippets.py` (details are withheld)
+# Full cactorial design of Experiment based model development (Phaese -II)
+-Deep U-Net: 
 
