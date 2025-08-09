@@ -2,7 +2,7 @@
 
 Public Snippets Only. This repository intentionally publishes **selected fragments (model skeletons and minimal training interfaces) for U-Net, Deep U-Net, RA-UNet, and ResNet-50–based fine-tuning** to support peer review and reproducibility claims.  
 
-Full implementations** (data pipeline, complete training loops, augmentation policy, metrics, callbacks incl. ECE, and evaluation) are withheld and available upon request under the Custom Research License.
+Full implementations (data pipeline, complete training loops, augmentation policy, metrics, callbacks incl. ECE, and evaluation) are withheld and available upon request under the Custom Research License.
 
 Contact: **abhishekjha2611@gmail.com**
 
