@@ -16,7 +16,7 @@ This file intentionally exposes only the interface for the U-Net constructor.
 The full architecture is available
 upon request under the Custom Research License.
 
-Contact: abhishekjha2611@gmail.com
+Contact: abhishekjha@uiowa.edu
 """
 
 
