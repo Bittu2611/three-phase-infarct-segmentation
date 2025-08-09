@@ -22,7 +22,7 @@ def run_from_config(cfg_path):
 
         ckpt = ModelCheckpoint(os.path.join(out, f"best_{expid}.keras"),
                                monitor='val_loss', save_best_only=True, verbose=1)
-        ece  = ECECallback((Xv, yv), num_bins=10)
+        ece  = ECECallback((Xv...............................)
 
         hist = model.fit(Xt, yt, validation_data=(Xv, yv),
                          batch_size=bs, epochs=epochs, callbacks=[ece, ckpt])
