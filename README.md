@@ -37,5 +37,3 @@ This repository includes **snippet-only** fine-tuning interfaces:
 - Config:`configs/deep_unet_snippet.yaml`  
 
 Note: Full implementations (data pipeline, complete training loops, augmentation policy, metrics, callbacks incl. ECE, and evaluation) are withheld and available upon request under the Custom Research License.
-
-Contact: abhishek-jha@uiowa.edu
