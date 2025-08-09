@@ -1,7 +1,7 @@
 """
 U-Net (ResNet-50 encoder) – fine-tuning snippet
 Full decoder wiring, loss/metrics, and callbacks are withheld.
-Contact: abhishekjha2611@gmail.com
+Contact: abhishek-jha@uiowa.edu
 """
 
 import tensorflow as tf
