@@ -1,0 +1,8 @@
+img_height: 256
+img_width: 256
+channels: 1
+base_filters: 32
+depth: 4
+use_attention: true
+use_residual: true
+note: "RA-UNet snippet config (illustrative; not runnable end-to-end)."

@@ -1,0 +1,8 @@
+# Minimal, illustrative config (no dataset paths)
+img_height: 256
+img_width: 256
+channels: 1
+base_filters: 64
+depth: 5
+dropout: [0.3, 0.2, 0.2, 0.1]
+note: "U-Net snippet config (illustrative; not runnable end-to-end)."
