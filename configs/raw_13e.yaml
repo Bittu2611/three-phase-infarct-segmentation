@@ -1,0 +1,17 @@
+img_height: 256
+img_width: 256
+batch_size: 16
+epochs: 13
+paths:
+  raw_img:  "/Users/abhishekjha/Desktop/MRI training/MRI 05.16.2025/1818 images_trained model and data/raw_images_1818"
+  raw_mask: "/Users/abhishekjha/Desktop/MRI training/MRI 05.16.2025/1818 images_trained model and data/Binary_masked_1818"
+  aug1_img: "/Users/abhishekjha/Desktop/MRI training/MRI 05.16.2025/1818 images_trained model and data/augmented_1/raw_images"
+  aug1_mask:"/Users/abhishekjha/Desktop/MRI training/MRI 05.16.2025/1818 images_trained model and data/augmented_1/Binary_masked"
+  aug2_img: "/Users/abhishekjha/Desktop/MRI training/MRI 05.16.2025/1818 images_trained model and data/augmented_2/raw_images"
+  aug2_mask:"/Users/abhishekjha/Desktop/MRI training/MRI 05.16.2025/1818 images_trained model and data/augmented_2/Binary_masked"
+  aug3_img: "/Users/abhishekjha/Desktop/MRI training/MRI 05.16.2025/1818 images_trained model and data/augmented_3/raw_images"
+  aug3_mask:"/Users/abhishekjha/Desktop/MRI training/MRI 05.16.2025/1818 images_trained model and data/augmented_3/Binary_masked"
+out_dir: "./experiments"
+datasets: ["raw","aug1","aug2","aug3"]
+val_split: 0.2
+seed: 42
