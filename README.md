@@ -38,4 +38,4 @@ This repository includes **snippet-only** fine-tuning interfaces:
 
 Note: Full implementations (data pipeline, complete training loops, augmentation policy, metrics, callbacks incl. ECE, and evaluation) are withheld and available upon request under the Custom Research License.
 
-Contact: **abhishekjha2611@gmail.com**
+Contact: abhishekjha2611@gmail.com, abhishek-jha@uiowa.edu
