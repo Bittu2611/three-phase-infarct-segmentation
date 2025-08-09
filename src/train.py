@@ -1,9 +1,7 @@
 """
 Training entrypoint (public snippet)
 
-This file intentionally withholds the end-to-end training pipeline
-(data loading, augmentation, model construction/compile, callbacks,
-logging, and persistence). A complete implementation is available
+A complete implementation is available
 upon reasonable request under the Custom Research License.
 
 Contact: abhishekjha2611@gmail.com
