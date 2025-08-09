@@ -1,0 +1,6 @@
+# Public snippet config (RA-UNet + ResNet-50)
+input_size: [256, 256, 3]
+freeze_until: 140
+epochs: 10
+lr: 1.0e-4
+# dataset paths, augmentation, losses/metrics, and callbacks intentionally withheld

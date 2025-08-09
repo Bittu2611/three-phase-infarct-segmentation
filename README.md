@@ -1,31 +1,46 @@
-# A Three-Phase Deep Learning Framework for Automated Infarct Segmentation in Preclinical Stroke Imaging
+## A Three-Phase Deep Learning Framework for Automated Infarct Segmentation in Preclinical Stroke Imaging
 
-Public Snippets Only.This repository intentionally includes **selected fragments** for U-Net and RA-UNet (model skeletons and minimal interfaces) for peer review.  
+Public Snippets Only. This repository intentionally publishes **selected fragments (model skeletons and minimal training interfaces) for U-Net, Deep U-Net, RA-UNet, and ResNet-50–based fine-tuning** to support peer review and reproducibility claims.  
 
-Full implementations** (data pipeline, complete training loops, augmentation policy, metrics, and evaluation) are **withheld** and available **upon request** per the custom research license.
+Full implementations** (data pipeline, complete training loops, augmentation policy, metrics, callbacks incl. ECE, and evaluation) are withheld and available upon request under the Custom Research License.
 
-This repository contains modular code snippets for the training and validation of multi-model U-Net-based infarct segmentation pipelines in preclinical stroke MRI, guided by a Design of Experiments (DOE) approach.
+Contact: **abhishekjha2611@gmail.com**
 
-## Features
-- 5-level U-Net architecture
-- Calibration-aware metrics (IoU, Dice, entropy, KL divergence, perplexity)
-- Expected Calibration Error (ECE) callback
-- Deterministic loading for raw and augmented datasets (1×, 2×, 3×)
-- Per-experiment plots and master CSV logging
+---
 
-## Installation
-```bash
-conda env create -f environment.yml
-conda activate infarct-seg
+### Models Covered (snippet-only)
+- Deep U-Net
+- U-Net – deeper encoder/decoder scaffold (dropouts, BN, skip wiring withheld)
+- RA-UNet– residual attention gate interfaces (attention/gating internals withheld)
+- U-Net (ResNet-50 encoder) – fine-tuning interface (decoder & training loop withheld)
+- RA-UNet (ResNet-50 encoder) – fine-tuning interface (attention & training loop withheld)
 
-models/
-unet/snippets.py
-raunet/snippets.py
-src/
-train_unet_snippet.py
-train_raunet_snippet.py
-configs/
-unet_snippet.yaml
-raunet_snippet.yaml
-scripts/
-run_snippets.sh
+---
+
+## Fine-tuning (Snippet-Only)
+This repository includes **snippet-only** fine-tuning interfaces:
+
+- U-Net (ResNet-50 encoder)**: `models/unet/finetune_resnet50_snippet.py`  
+  Runner: `src/finetune_unet_resnet50_snippet.py`  
+  Config: `configs/unet_resnet50_finetune.yaml`
+
+- RA-UNet (ResNet-50 encoder)**: `models/raunet/finetune_resnet50_snippet.py`  
+  Runner: `src/finetune_raunet_resnet50_snippet.py`  
+  Config: `configs/raunet_resnet50_finetune.yaml`
+
+Decoder wiring, attention blocks, training loop, callbacks, and logging are **withheld**.  
+Full implementations available upon request** (abhishekjha2611@gmail.com).
+
+---
+
+## Baseline Training (Snippet-Only)
+- U-Net snippets: `models/unet/snippets.py`  
+  Runner: `src/train_unet_snippet.py`  
+  Config: `configs/unet_snippet.yaml`
+
+- RA-UNet snippets: `models/raunet/snippets.py`  
+  Runner: `src/train_raunet_snippet.py`  
+  Config: `configs/raunet_snippet.yaml`
+
+- Deep U-Net scaffold: see `models/unet/snippets.py` (details are withheld)
+
