@@ -34,7 +34,7 @@ Deep U-Net (5-level / 9-layer, Full-Factorial DOE)
 - Config:`configs/deep_unet_snippet.yaml`
 
 # Human-Machine concordance (Phase -III)
-4-Individual human raters Vs Model B*
+Model B* Vs 4-Individual human raters and Model N* (nn-UNET model)
 
 
 # Hybrid model development 
