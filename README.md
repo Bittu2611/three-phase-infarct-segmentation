@@ -38,6 +38,7 @@ Model B* Vs 4-Individual human raters and Model N* (nn-UNET model)
 - Model file: `models/nnUNET/Ultra-nnUNET.py`  
 - Runner: `src/train_Ultra-nnUNET_snippet.py`  
 - Config:`configs/Ultra-nnUNET_snippet.yaml`
+  
 # Hybrid model development 
 The above optimisation strategy was further extended to develop a hybrid model (Model HB*) and evaluate its cross-species and cross-condition generalizability using rodent stroke and human meningioma MRI datasets. 
 
