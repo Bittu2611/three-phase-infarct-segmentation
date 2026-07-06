@@ -1,4 +1,4 @@
-## Factorial Optimization and Multi-Rater Validation of a Deep Learning Framework for Brain Lesion Segmentation in Translational Research  ​
+## Factorial Optimisation and Multi-Rater Validation of a Deep Learning Framework for Brain Lesion Segmentation in Translational Research  ​
 
 Public Snippets Only. This repository intentionally publishes selected fragments (model skeletons and minimal training interfaces) for U-Net, Deep U-Net, RA-UNet, and ResNet-50–based fine-tuning  to support peer review and reproducibility claims.  
 
@@ -27,18 +27,19 @@ Public Snippets Only. This repository intentionally publishes selected fragments
   Runner: `src/finetune_raunet_resnet50_snippet.py`  
   Config: `configs/raunet_resnet50_finetune.yaml`
 
-# Full Factorial design of experiment based model development (Phase -II)
+# Full Factorial design of experiment-based model development (Phase -II)
 Deep U-Net (5-level / 9-layer, Full-Factorial DOE)
 - Model file: `models/unet/deep_unet_snippet.py`  
 - Runner: `src/train_deep_unet_snippet.py`  
 - Config:`configs/deep_unet_snippet.yaml`
 
-# Human-Machine concordance (Phase -III)
+# Machine concordance with independent human raters and nnUNET trained models (Phase -III)
 Model B* Vs 4-Individual human raters and Model N* (nn-UNET model)
-
-
+- Model file: `models/nnUNET/Ultra-nnUNET.py`  
+- Runner: `src/train_Ultra-nnUNET_snippet.py`  
+- Config:`configs/Ultra-nnUNET_snippet.yaml`
 # Hybrid model development 
-Above optimization strategy was further extended to develope a hybrid model (Model HB*) and evaluated its cross-species and cross-condition generalizability using rodent stroke and human meningioma MRI datasets. 
+The above optimisation strategy was further extended to develop a hybrid model (Model HB*) and evaluate its cross-species and cross-condition generalizability using rodent stroke and human meningioma MRI datasets. 
 
 Note: Full implementations (data pipeline, complete training loops, augmentation policy, metrics, callbacks incl. ECE, and evaluation) are withheld and available upon request under the Custom Research License.
 
