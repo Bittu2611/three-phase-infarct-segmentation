@@ -10,34 +10,22 @@ Public Snippets Only. This repository intentionally publishes selected fragments
 
 
 ## Baseline Training (Snippet-Only)-Phae-I
-- U-Net snippets: `models/unet/snippets.py`  
-  Runner: `src/train_unet_snippet.py`  
-  Config: `configs/unet_snippet.yaml`
+- U-Net 
 
-- RA-UNet snippets: `models/raunet/snippets.py`  
-  Runner: `src/train_raunet_snippet.py`  
-  Config: `configs/raunet_snippet.yaml`
+- RA-UNet 
 
 ## Fine-tuning (Snippet-Only)
-- U-Net (ResNet-50 encoder): `models/unet/finetune_resnet50_snippet.py`  
-  Runner: `src/finetune_unet_resnet50_snippet.py`  
-  Config: `configs/unet_resnet50_finetune.yaml`
+- U-Net (ResNet-50 encoder)
 
-- RA-UNet (ResNet-50 encoder): `models/raunet/finetune_resnet50_snippet.py`  
-  Runner: `src/finetune_raunet_resnet50_snippet.py`  
-  Config: `configs/raunet_resnet50_finetune.yaml`
+- RA-UNet (ResNet-50 encoder)
 
 # Full Factorial design of experiment-based model development (Phase -II)
 Deep U-Net (5-level / 9-layer, Full-Factorial DOE)
-- Model file: `models/unet/deep_unet_snippet.py`  
-- Runner: `src/train_deep_unet_snippet.py`  
-- Config:`configs/deep_unet_snippet.yaml`
+
 
 # Machine concordance with independent human raters and nnUNET trained models (Phase -III)
 Model B* Vs 4-Individual human raters and Model N* (nn-UNET model)
-- Model file: `models/nnUNET/Ultra-nnUNET.py`  
-- Runner: `src/train_Ultra-nnUNET_snippet.py`  
-- Config:`configs/Ultra-nnUNET_snippet.yaml`
+
   
 # Hybrid model development 
 The above optimisation strategy was further extended to develop a hybrid model (Model HB*) and evaluate its cross-species and cross-condition generalizability using rodent stroke and human meningioma MRI datasets. 
