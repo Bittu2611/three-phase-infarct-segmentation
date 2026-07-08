@@ -1,0 +1,353 @@
+# fine-tuning on ResNet50, static augmentation
+
+import os
+import re
+import random
+import cv2
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from PIL import Image
+from scipy.ndimage import gaussian_filter, map_coordinates
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.layers import Conv2D, UpSampling2D, concatenate
+from tensorflow.keras.applications import ResNet50
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.losses import BinaryCrossentropy
+from tensorflow.keras.metrics import AUC, Precision, Recall, KLDivergence, MeanIoU
+from tensorflow.keras.callbacks import ModelCheckpoint, CSVLogger
+from tensorflow.keras import mixed_precision
+
+mixed_precision.set_global_policy("mixed_float16")
+gpus = tf.config.list_physical_devices("GPU")
+if gpus:
+    for g in gpus:
+        tf.config.experimental.set_memory_growth(g, True)
+    tf.config.set_visible_devices(gpus[0], "GPU")
+print("GPUs:", len(gpus))
+
+IMG_HEIGHT, IMG_WIDTH = 256, 256
+BATCH_SIZE = 8
+INITIAL_LR = 1e-4
+FINE_TUNE_LR = 1e-5
+FROZEN_EPOCHS = 10
+UNFROZEN_EPOCHS = 20
+STATIC_AUG_FACTOR = 3
+RANDOM_STATE = 42
+
+DATA_ROOT = "/Users/abhishekjha/Desktop/MRI training/MRI 05.16.2025"
+RAW_IMG_DIR = os.path.join(DATA_ROOT, "raw_images")
+RAW_MSK_DIR = os.path.join(DATA_ROOT, "Binary_masked")
+
+PRETRAINED_PATH = os.path.join(
+    DATA_ROOT,
+    "1818 images_trained model and data/Experiments/best_dice_1818_13_3.keras",
+)
+
+OUT_DIR = os.path.join(DATA_ROOT, "finetune_phase2_static_aug_Model_B_star")
+AUG_IMG_DIR = os.path.join(OUT_DIR, "aug_images")
+AUG_MSK_DIR = os.path.join(OUT_DIR, "aug_masks")
+LOG_DIR = os.path.join(OUT_DIR, "logs")
+for d in (OUT_DIR, AUG_IMG_DIR, AUG_MSK_DIR, LOG_DIR):
+    os.makedirs(d, exist_ok=True)
+
+def _elastic_deform_gray(image, alpha, sigma):
+    shape = image.shape
+    rng = np.random.default_rng()
+    dx = gaussian_filter(rng.uniform(-1, 1, shape), sigma) * alpha
+    dy = gaussian_filter(rng.uniform(-1, 1, shape), sigma) * alpha
+    x, y = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
+    indices = (y + dy).reshape(-1), (x + dx).reshape(-1)
+    return map_coordinates(image, indices, order=1, mode="reflect").reshape(shape)
+
+def _static_intensity_augment(gray):
+    img = gray.astype(np.float32)
+    if random.random() < 0.5:
+        img = np.clip(img + random.uniform(-0.15, 0.15), 0.0, 1.0)
+    if random.random() < 0.5:
+        img = np.clip(np.power(np.clip(img, 1e-6, 1.0), random.uniform(0.8, 1.2)), 0.0, 1.0)
+    if random.random() < 0.5:
+        img = gaussian_filter(img, sigma=random.uniform(0.3, 1.0))
+    if random.random() < 0.5:
+        img = np.clip(img + np.random.normal(0.0, random.uniform(0.01, 0.05), img.shape), 0.0, 1.0)
+    if random.random() < 0.5:
+        kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+        img = np.clip(cv2.filter2D(img, -1, kernel), 0.0, 1.0)
+    if random.random() < 0.5:
+        img = np.clip(_elastic_deform_gray(img, random.uniform(8.0, 12.0), 3.0), 0.0, 1.0)
+    return img
+
+def _static_geometric_augment(img_gray, msk_gray):
+    img = img_gray.astype(np.float32)
+    msk = msk_gray.astype(np.float32)
+    if random.random() < 0.5:
+        img = np.fliplr(img)
+        msk = np.fliplr(msk)
+    if random.random() < 0.5:
+        img = np.flipud(img)
+        msk = np.flipud(msk)
+    if random.random() < 0.5:
+        angle = random.uniform(-10.0, 10.0)
+        h, w = img.shape[:2]
+        matrix = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+        img = cv2.warpAffine(
+            img, matrix, (w, h),
+            flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101,
+        )
+        msk = cv2.warpAffine(
+            msk, matrix, (w, h),
+            flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT,
+        )
+    return img, msk
+
+def static_random_augment_pil(img, msk):
+    img_np = np.asarray(img, dtype=np.float32) / 255.0
+    msk_np = np.asarray(msk, dtype=np.float32) / 255.0
+    img_np, msk_np = _static_geometric_augment(img_np, msk_np)
+    img_np = _static_intensity_augment(img_np)
+    img_out = Image.fromarray((np.clip(img_np, 0, 1) * 255).astype(np.uint8), mode="L")
+    msk_out = Image.fromarray((np.clip(msk_np, 0, 1) * 255).astype(np.uint8), mode="L")
+    return img_out, msk_out
+
+exts = (".png", ".jpg", ".jpeg", ".tif", ".tiff")
+pairs = []
+for fn in sorted(os.listdir(RAW_IMG_DIR)):
+    if not fn.lower().endswith(exts):
+        continue
+    m = re.search(r"\d+", fn)
+    img_id = m.group() if m else fn
+    masks = [x for x in os.listdir(RAW_MSK_DIR) if img_id in x]
+    if not masks:
+        continue
+    pairs.append((fn, masks[0]))
+
+print("static aug:", len(pairs))
+for fn, ms in pairs:
+    base = os.path.splitext(fn)[0]
+    img0 = Image.open(os.path.join(RAW_IMG_DIR, fn)).convert("L").resize(
+        (IMG_WIDTH, IMG_HEIGHT)
+    )
+    msk0 = Image.open(os.path.join(RAW_MSK_DIR, ms)).convert("L").resize(
+        (IMG_WIDTH, IMG_HEIGHT)
+    )
+    img0.save(os.path.join(AUG_IMG_DIR, f"{base}_orig.png"))
+    msk0.save(os.path.join(AUG_MSK_DIR, f"{base}_orig.png"))
+    for k in range(1, STATIC_AUG_FACTOR + 1):
+        ai, am = static_random_augment_pil(img0, msk0)
+        ai.save(os.path.join(AUG_IMG_DIR, f"{base}_aug{k}.png"))
+        am.save(os.path.join(AUG_MSK_DIR, f"{base}_aug{k}.png"))
+
+all_imgs = sorted(os.listdir(AUG_IMG_DIR))
+all_msks = sorted(os.listdir(AUG_MSK_DIR))
+img_paths = [os.path.join(AUG_IMG_DIR, fn) for fn in all_imgs]
+msk_paths = [os.path.join(AUG_MSK_DIR, fn) for fn in all_msks]
+print("aug total:", len(img_paths))
+
+X_tr, X_val, Y_tr, Y_val = train_test_split(
+    img_paths, msk_paths, test_size=0.2, random_state=RANDOM_STATE
+)
+print("train/val:", len(X_tr), len(X_val))
+
+def iou_metric(y_true, y_pred):
+    y_pred = tf.cast(y_pred > 0.5, tf.float32)
+    inter = tf.reduce_sum(y_true * y_pred, axis=[1, 2, 3])
+    union = tf.reduce_sum(y_true + y_pred, axis=[1, 2, 3]) - inter
+    return tf.reduce_mean((inter + 1e-10) / (union + 1e-10))
+
+def dice_coef(y_true, y_pred, smooth=1e-6):
+    y_pred = tf.cast(y_pred > 0.5, tf.float32)
+    yt = tf.reshape(y_true, [-1])
+    yp = tf.reshape(y_pred, [-1])
+    inter = tf.reduce_sum(yt * yp)
+    return (2 * inter + smooth) / (tf.reduce_sum(yt) + tf.reduce_sum(yp) + smooth)
+
+def predictive_entropy_metric(y_true, y_pred):
+    y_pred = tf.cast(y_pred, tf.float32)
+    eps = 1e-7
+    ent = -(y_pred * tf.math.log(y_pred + eps) + (1 - y_pred) * tf.math.log(1 - y_pred + eps))
+    return tf.reduce_mean(ent)
+
+def perplexity_metric(y_true, y_pred):
+    y_pred = tf.cast(y_pred, tf.float32)
+    bce = tf.keras.losses.binary_crossentropy(y_true, y_pred)
+    return tf.reduce_mean(tf.exp(bce))
+
+metrics_list = [
+    "accuracy",
+    AUC(name="auc"),
+    Precision(name="precision"),
+    Recall(name="recall"),
+    iou_metric,
+    predictive_entropy_metric,
+    dice_coef,
+    KLDivergence(name="kldiv"),
+    perplexity_metric,
+    MeanIoU(name="mean_iou", num_classes=2),
+]
+
+CUSTOM_OBJECTS = {
+    "iou_metric": iou_metric,
+    "dice_coef": dice_coef,
+    "predictive_entropy_metric": predictive_entropy_metric,
+    "perplexity_metric": perplexity_metric,
+    "mean_iou": MeanIoU(name="mean_iou", num_classes=2),
+    "auc": AUC(name="auc"),
+    "precision": Precision(name="precision"),
+    "recall": Recall(name="recall"),
+    "kldiv": KLDivergence(name="kldiv"),
+}
+
+def preprocess(i_path, m_path):
+    img = tf.io.read_file(i_path)
+    img = tf.image.decode_png(img, channels=1)
+    msk = tf.io.read_file(m_path)
+    msk = tf.image.decode_png(msk, channels=1)
+    img = tf.image.convert_image_dtype(img, tf.float32)
+    msk = tf.image.convert_image_dtype(msk, tf.float32)
+    img = tf.image.resize(img, [IMG_HEIGHT, IMG_WIDTH])
+    msk = tf.image.resize(msk, [IMG_HEIGHT, IMG_WIDTH], method="nearest")
+    img = tf.tile(img, [1, 1, 3])
+    return img, msk
+
+def make_ds(Xp, Yp, train=True):
+    ds = tf.data.Dataset.from_tensor_slices((Xp, Yp))
+    if train:
+        ds = ds.shuffle(len(Xp))
+    ds = ds.map(preprocess, num_parallel_calls=tf.data.AUTOTUNE)
+    ds = ds.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
+    return ds
+
+train_ds = make_ds(X_tr, Y_tr, train=True)
+val_ds = make_ds(X_val, Y_val, train=False)
+
+def build_finetune_unet():
+    enc = ResNet50(
+        weights="imagenet",
+        include_top=False,
+        input_shape=(IMG_HEIGHT, IMG_WIDTH, 3),
+    )
+    skips = [
+        enc.get_layer("conv1_relu").output,
+        enc.get_layer("conv2_block3_out").output,
+        enc.get_layer("conv3_block4_out").output,
+        enc.get_layer("conv4_block6_out").output,
+    ]
+    x = enc.output
+
+    def up(x_in, skip, f):
+        x_in = UpSampling2D()(x_in)
+        x_in = concatenate([x_in, skip])
+        x_in = Conv2D(f, 3, padding="same", activation="relu")(x_in)
+        x_in = Conv2D(f, 3, padding="same", activation="relu")(x_in)
+        return x_in
+
+    x = up(x, skips[-1], 512)
+    x = up(x, skips[-2], 256)
+    x = up(x, skips[-3], 128)
+    x = up(x, skips[-4], 64)
+    x = UpSampling2D()(x)
+    x = Conv2D(32, 3, padding="same", activation="relu")(x)
+    x = Conv2D(32, 3, padding="same", activation="relu")(x)
+    out = Conv2D(1, 1, activation="sigmoid", dtype="float32")(x)
+    return Model(enc.input, out), enc
+
+model, encoder = build_finetune_unet()
+
+print("loading pretrained weights:", PRETRAINED_PATH)
+old = load_model(PRETRAINED_PATH, custom_objects=CUSTOM_OBJECTS)
+old_map = {layer.name: layer for layer in old.layers}
+for layer in model.layers:
+    if layer.name in old_map:
+        w_old = old_map[layer.name].get_weights()
+        w_new = layer.get_weights()
+        if w_old and all(o.shape == n.shape for o, n in zip(w_old, w_new)):
+            layer.set_weights(w_old)
+print("decoder weights loaded")
+
+for lay in encoder.layers:
+    lay.trainable = False
+model.compile(optimizer=Adam(INITIAL_LR), loss=BinaryCrossentropy(), metrics=metrics_list)
+
+phase1_csv = os.path.join(LOG_DIR, "phase1_log.csv")
+history1 = model.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=FROZEN_EPOCHS,
+    callbacks=[
+        CSVLogger(phase1_csv, append=False),
+        ModelCheckpoint(
+            os.path.join(LOG_DIR, "best_dice_phase1_Model_B_star.keras"),
+            monitor="val_dice_coef",
+            mode="max",
+            save_best_only=True,
+            verbose=1,
+        ),
+        ModelCheckpoint(
+            os.path.join(LOG_DIR, "best_loss_phase1_Model_B_star.keras"),
+            monitor="val_loss",
+            mode="min",
+            save_best_only=True,
+            verbose=1,
+        ),
+    ],
+)
+
+df1 = pd.read_csv(phase1_csv)
+plt.figure(figsize=(6, 4))
+plt.plot(df1["epoch"], df1["dice_coef"], label="train Dice", linewidth=2)
+plt.plot(df1["epoch"], df1["val_dice_coef"], label="val Dice", linewidth=2)
+plt.plot(df1["epoch"], df1["val_loss"], label="val Loss", linewidth=2)
+plt.title("phase1")
+plt.xlabel("Epoch")
+plt.ylabel("Value")
+plt.legend()
+plt.tight_layout()
+plt.savefig(os.path.join(LOG_DIR, "phase1_metrics.png"), dpi=300)
+plt.close()
+
+for lay in model.layers:
+    lay.trainable = True
+model.compile(optimizer=Adam(FINE_TUNE_LR), loss=BinaryCrossentropy(), metrics=metrics_list)
+
+phase2_csv = os.path.join(LOG_DIR, "phase2_log.csv")
+history2 = model.fit(
+    train_ds,
+    validation_data=val_ds,
+    initial_epoch=FROZEN_EPOCHS,
+    epochs=FROZEN_EPOCHS + UNFROZEN_EPOCHS,
+    callbacks=[
+        CSVLogger(phase2_csv, append=False),
+        ModelCheckpoint(
+            os.path.join(LOG_DIR, "best_dice_Model_B_star.keras"),
+            monitor="val_dice_coef",
+            mode="max",
+            save_best_only=True,
+            verbose=1,
+        ),
+        ModelCheckpoint(
+            os.path.join(LOG_DIR, "best_loss_Model_B_star.keras"),
+            monitor="val_loss",
+            mode="min",
+            save_best_only=True,
+            verbose=1,
+        ),
+    ],
+)
+
+df2 = pd.read_csv(phase2_csv)
+plt.figure(figsize=(6, 4))
+plt.plot(df2["epoch"], df2["dice_coef"], label="train Dice", linewidth=2)
+plt.plot(df2["epoch"], df2["val_dice_coef"], label="val Dice", linewidth=2)
+plt.plot(df2["epoch"], df2["val_loss"], label="val Loss", linewidth=2)
+plt.title("phase2")
+plt.xlabel("Epoch")
+plt.ylabel("Value")
+plt.legend()
+plt.tight_layout()
+plt.savefig(os.path.join(LOG_DIR, "phase2_metrics.png"), dpi=300)
+plt.close()
+
+model.save(os.path.join(OUT_DIR, "final_Model_B_star.keras"))
+print("done:", OUT_DIR)
