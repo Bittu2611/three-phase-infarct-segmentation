@@ -1,185 +1,470 @@
-# MRI / stats plot generation
+# MRI plot generation
 
-import os
+import json, os, re, warnings
 from pathlib import Path
 
 import cv2
 import numpy as np
 import matplotlib
-
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from skimage import measure
 
-STATS_OUTPUT_DIR = Path.home() / "AbhishekAI" / "workspace" / "stats_output"
+OUTPUT_ROOT = "/Users/abhishekjha/Desktop/output"
+PLOTS_DIR = "/Users/abhishekjha/Desktop/plots"
 PLOTLY_JS_SOURCE = True
+os.makedirs(PLOTS_DIR, exist_ok=True)
+
+try:
+    import nibabel as nib
+    HAVE_NIB = True
+except Exception:
+    HAVE_NIB = False
 
 
-def save_side_by_side(raw_img, mask_img, title, out_path):
-    fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-    axs[0].imshow(raw_img, cmap="gray")
-    axs[0].axis("off")
-    axs[0].set_title("Raw")
-    axs[1].imshow(mask_img, cmap="gray")
-    axs[1].axis("off")
-    axs[1].set_title("Mask")
-    fig.suptitle(title)
-    plt.tight_layout()
-    fig.savefig(out_path, dpi=150)
-    plt.close(fig)
+def squeeze_prob(pred):
+    arr = np.asarray(pred, dtype=np.float32)
+    while arr.ndim > 2:
+        if arr.shape[0] == 1: arr = np.squeeze(arr, 0)
+        elif arr.shape[-1] == 1: arr = np.squeeze(arr, -1)
+        elif arr.ndim == 3: arr = arr[..., 0]
+        else: break
+    return np.clip(arr, 0, 1)
+
+
+def binarize_prediction(pred, thresh):
+    return (squeeze_prob(pred) > thresh).astype(np.uint8)
+
+
+def resize_prob(prob, shape):
+    H, W = shape
+    return cv2.resize(prob.astype(np.float32), (W, H), interpolation=cv2.INTER_LINEAR)
+
+
+def resize_mask(mask, shape):
+    H, W = shape
+    return cv2.resize(mask.astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST)
+
+
+def pad_to_shape(arr, shape):
+    Ht, Wt = shape
+    out = np.zeros((Ht, Wt), dtype=arr.dtype)
+    h, w = arr.shape
+    out[:h, :w] = arr
+    return out
+
+
+def stack_slices(slices):
+    if not slices:
+        return None
+    H = max(s.shape[0] for s in slices)
+    W = max(s.shape[1] for s in slices)
+    return np.stack([pad_to_shape(s, (H, W)) for s in slices])
+
+
+def process_slice(pred, shape, thresh):
+    p = squeeze_prob(pred)
+    m = (p > thresh).astype(np.uint8)
+    return resize_prob(p, shape), resize_mask(m, shape), m
+
+
+def sum_volume_map(slices, dy, dx, dz):
+    vox = dy * dx * dz
+    acc = None
+    for sl in slices:
+        c = sl.astype(np.float32) * vox
+        if acc is None:
+            acc = c
+        elif c.shape != acc.shape:
+            H = max(acc.shape[0], c.shape[0])
+            W = max(acc.shape[1], c.shape[1])
+            acc = pad_to_shape(acc, (H, W))
+            c = pad_to_shape(c, (H, W))
+            acc += c
+        else:
+            acc += c
+    return acc
+
+
+def save_side_by_side(raw, mask, title, out_path):
+    fig, ax = plt.subplots(1, 2, figsize=(8, 4))
+    ax[0].imshow(raw, cmap="gray"); ax[0].axis("off"); ax[0].set_title("Raw")
+    ax[1].imshow(mask, cmap="gray"); ax[1].axis("off"); ax[1].set_title("Mask")
+    fig.suptitle(title); plt.tight_layout()
+    fig.savefig(out_path, dpi=150); plt.close(fig)
+
+
+def save_overlay(raw, prob, out_path, alpha=0.45):
+    raw = np.clip(raw, 0, 1)
+    prob = np.clip(prob, 0, 1)
+    rgb = np.stack([raw, raw, raw], -1)
+    heat = plt.cm.jet(prob)[..., :3]
+    m = (prob >= 0.05).astype(np.float32)[..., None]
+    img = np.clip(rgb * (1 - alpha * m) + heat * (alpha * m), 0, 1)
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.imshow(img); ax.axis("off")
+    fig.savefig(out_path, dpi=150); plt.close(fig)
+
+
+def save_prob_png(prob, out_path):
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.imshow(np.clip(prob, 0, 1), cmap="jet", vmin=0, vmax=1)
+    ax.axis("off")
+    fig.savefig(out_path, dpi=150); plt.close(fig)
 
 
 def save_stacked_jet(raw_vis, out_path):
-    stack = np.array(raw_vis)
-    cum = np.sum(stack, axis=0)
-    cum = (cum - cum.min()) / max(1e-8, cum.max() - cum.min())
-    jet_img = plt.cm.jet(cum)
+    s = np.array(raw_vis).sum(0)
+    s = (s - s.min()) / max(1e-8, s.max() - s.min())
     plt.figure(figsize=(6, 6))
-    plt.imshow(jet_img)
-    plt.axis("off")
+    plt.imshow(plt.cm.jet(s)); plt.axis("off")
     plt.title("Stacked Raw (Jet)")
-    plt.savefig(out_path, dpi=150)
-    plt.close()
+    plt.savefig(out_path, dpi=150); plt.close()
+
+
+def save_heatmap(vol, out_path):
+    if vol is None or not vol.size:
+        return
+    p = np.max(vol, 0)
+    p = (p - p.min()) / max(1e-8, p.max() - p.min())
+    fig, ax = plt.subplots(figsize=(7, 7))
+    ax.imshow(p, cmap="jet", vmin=0, vmax=1); ax.axis("off")
+    fig.savefig(out_path, dpi=150); plt.close(fig)
+
+
+def save_density_map(vol, dy, dx, dz, out_path):
+    if vol is None or not vol.size:
+        return
+    d = vol.sum(0) * dy * dx * dz
+    fig, ax = plt.subplots(figsize=(7, 7))
+    ax.imshow(d, cmap="hot"); ax.axis("off")
+    fig.savefig(out_path, dpi=150); plt.close(fig)
 
 
 def save_3d_surface(X, Y, Z, zlabel, title, out_path):
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection="3d")
     surf = ax.plot_surface(X, Y, Z, cmap="jet", alpha=0.9)
-    ax.set_xlabel("X (mm)")
-    ax.set_ylabel("Y (mm)")
-    ax.set_zlabel(zlabel)
+    ax.set_xlabel("X (mm)"); ax.set_ylabel("Y (mm)"); ax.set_zlabel(zlabel)
     ax.set_title(title)
     fig.colorbar(surf, shrink=0.5, aspect=10)
-    plt.savefig(out_path, dpi=150)
-    plt.close(fig)
+    plt.savefig(out_path, dpi=150); plt.close(fig)
 
 
-def save_marching_cubes_mesh(mask_vol_small, dy, dx, dz, total_mm3, out_path):
+def save_marching_cubes_mesh(vol, dy, dx, dz, mm3, out_path):
     try:
-        verts, faces, normals, values = measure.marching_cubes(
-            volume=mask_vol_small.astype(np.float32),
-            level=0.5,
-            spacing=(dz, dy, dx),
-        )
+        v, f, _, _ = measure.marching_cubes(vol.astype(np.float32), 0.5, spacing=(dz, dy, dx))
     except Exception:
         return
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection="3d")
-    mesh = Poly3DCollection(verts[faces], alpha=0.7)
-    mesh.set_facecolor("red")
+    mesh = Poly3DCollection(v[f], alpha=0.7); mesh.set_facecolor("red")
     ax.add_collection3d(mesh)
-    zmax = mask_vol_small.shape[0] * dz
-    ymax = mask_vol_small.shape[1] * dy
-    xmax = mask_vol_small.shape[2] * dx
-    ax.set_xlim(0, xmax)
-    ax.set_ylim(0, ymax)
-    ax.set_zlim(0, zmax)
-    ax.set_xlabel("X (mm)")
-    ax.set_ylabel("Y (mm)")
-    ax.set_zlabel("Z (mm)")
-    ax.set_title(f"3D Infarct Mesh | Total Volume = {total_mm3:.2f} mm³")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
-    plt.close(fig)
+    ax.set_xlim(0, vol.shape[2] * dx); ax.set_ylim(0, vol.shape[1] * dy); ax.set_zlim(0, vol.shape[0] * dz)
+    ax.set_xlabel("X (mm)"); ax.set_ylabel("Y (mm)"); ax.set_zlabel("Z (mm)")
+    ax.set_title(f"3D Infarct Mesh | Total Volume = {mm3:.2f} mm³")
+    plt.tight_layout(); fig.savefig(out_path, dpi=150); plt.close(fig)
 
 
-def save_mri_matplotlib_plots(output_dir, raw_vis, volume_map_accum, mask_small_stack,
-                              total_volume_mm3, dy, dx, dz, do_3d=True):
-    """Write standard MRI PNG outputs into output_dir."""
-    os.makedirs(output_dir, exist_ok=True)
-    stacked_path = os.path.join(output_dir, "stacked_jet_image.png")
-    save_stacked_jet(raw_vis, stacked_path)
-
-    if not do_3d or volume_map_accum is None:
-        return {
-            "stacked_jet_image": stacked_path,
-        }
-
-    hvm, wvm = volume_map_accum.shape
-    x = np.linspace(0, wvm * dx, wvm)
-    y = np.linspace(0, hvm * dy, hvm)
-    X, Y = np.meshgrid(x, y)
-    vm = volume_map_accum
-    vm_norm = (vm - vm.min()) / max(1e-8, vm.max() - vm.min())
-
-    vol_graph = os.path.join(output_dir, "3D_volumetric_graph_normalized.png")
-    surface_phys = os.path.join(output_dir, "3D_surface_physical_totalZ.png")
-    mesh_png = os.path.join(output_dir, "3D_infarct_mesh.png")
-
-    save_3d_surface(
-        X, Y, vm_norm, "Normalized Infarct Intensity",
-        f"3D Volumetric Graph (Normalized) | Total {total_volume_mm3:.2f} mm^3",
-        vol_graph,
-    )
-    save_3d_surface(
-        X, Y, vm, "Volume (mm^3 per pixel)",
-        f"3D Surface (Physical Z) | Total {total_volume_mm3:.2f} mm^3",
-        surface_phys,
-    )
-    mask_small_vol = np.stack(mask_small_stack, axis=0)
-    save_marching_cubes_mesh(mask_small_vol, dy, dx, dz, total_volume_mm3, mesh_png)
-
-    return {
-        "stacked_jet_image": stacked_path,
-        "3D_volumetric_graph_normalized": vol_graph,
-        "3D_surface_physical_totalZ": surface_phys,
-        "3D_infarct_mesh": mesh_png,
-    }
+def write_nifti(out_dir, prob_vol, mask_vol, dy, dx, dz):
+    if not HAVE_NIB or prob_vol is None or mask_vol is None:
+        return {}
+    aff = np.diag([dx, dy, dz, 1.0]).astype(np.float64)
+    p1 = os.path.join(out_dir, "infarct_probability.nii.gz")
+    p2 = os.path.join(out_dir, "infarct_mask.nii.gz")
+    nib.save(nib.Nifti1Image(prob_vol.astype(np.float32), aff), p1)
+    nib.save(nib.Nifti1Image(mask_vol.astype(np.uint8), aff), p2)
+    return {"infarct_probability": p1, "infarct_mask": p2}
 
 
-def save_mri_plotly_html(output_dir, masks_dir, dy, dx, dz,
-                         image_dir=None, atlas_dir=None,
-                         build_combined_overlay=None,
-                         build_plotly_mesh_from_masks=None,
-                         build_plotly_surface_from_masks=None):
-    """Write interactive Plotly HTML files into output_dir."""
-    os.makedirs(output_dir, exist_ok=True)
+def save_mayavi_iso(vol, dy, dx, dz, out_path, level=0.5):
+    if vol is None or not vol.size:
+        return
+    try:
+        from mayavi import mlab
+        mlab.options.offscreen = True
+        mlab.figure(size=(1200, 900), bgcolor=(1, 1, 1))
+        src = mlab.pipeline.scalar_field(vol.astype(np.float32))
+        mlab.pipeline.iso_surface(src, contours=[level], opacity=0.85, color=(0.88, 0.15, 0.15))
+        mlab.view(azimuth=45, elevation=55)
+        mlab.savefig(out_path); mlab.close(all=True)
+    except Exception:
+        m = (vol >= level).astype(np.float32)
+        mm3 = m.sum() * dy * dx * dz
+        save_marching_cubes_mesh(m, dy, dx, dz, mm3, out_path)
+
+
+def read_spacing(out_dir):
+    out_dir = Path(out_dir)
+    dy = dx = dz = mm3 = None
+    jf = out_dir / "spacing.json"
+    if jf.is_file():
+        try:
+            d = json.loads(jf.read_text())
+            dy, dx, dz, mm3 = d.get("dy_mm"), d.get("dx_mm"), d.get("dz_mm"), d.get("total_mm3")
+        except Exception:
+            pass
+    sf = out_dir / "summary.txt"
+    if sf.is_file():
+        try:
+            t = sf.read_text()
+            if dy is None:
+                m = re.search(r"dy_mm:\s*([0-9.+-eE]+)", t); dy = float(m.group(1)) if m else None
+            if dx is None:
+                m = re.search(r"dx_mm:\s*([0-9.+-eE]+)", t); dx = float(m.group(1)) if m else None
+            if dz is None:
+                m = re.search(r"dz_mm:\s*([0-9.+-eE]+)", t); dz = float(m.group(1)) if m else None
+            if mm3 is None:
+                m = re.search(r"Total Volume \(mm\^3\):\s*([0-9.+-eE]+)", t)
+                mm3 = float(m.group(1)) if m else None
+        except Exception:
+            pass
+    return float(dy or 1), float(dx or 1), float(dz or 1), (float(mm3) if mm3 is not None else None)
+
+
+def load_masks(masks_dir, thresh=127):
     masks_dir = Path(masks_dir)
     if not masks_dir.is_dir():
-        return {}
+        return []
+    files = []
+    for p in masks_dir.glob("mask_*.png"):
+        m = re.search(r"mask_(\d+)", p.name, re.I)
+        if m:
+            files.append((int(m.group(1)), p))
+    files.sort()
+    out = []
+    for _, p in files:
+        mk = cv2.imread(str(p), cv2.IMREAD_GRAYSCALE)
+        if mk is not None:
+            out.append((mk > thresh).astype(np.float32))
+    return out
+
+
+def load_prob_slices(out_dir, thresh=127):
+    prob_dir = Path(out_dir) / "probability"
+    if prob_dir.is_dir():
+        files = sorted(prob_dir.glob("prob_*.png"), key=lambda p: int(re.search(r"(\d+)", p.stem).group(1)))
+        out = []
+        for p in files:
+            a = cv2.imread(str(p), cv2.IMREAD_GRAYSCALE)
+            if a is not None:
+                out.append(a.astype(np.float32) / 255.0)
+        if out:
+            return out
+    return load_masks(out_dir / "masks", thresh)
+
+
+def save_3d_plots(out_dir, vol_map, mask_vol, dy, dx, dz, mm3, skip=True):
+    out_dir = Path(out_dir)
+    H, W = vol_map.shape
+    x = np.linspace(0, W * dx, W); y = np.linspace(0, H * dy, H)
+    X, Y = np.meshgrid(x, y)
+    norm = (vol_map - vol_map.min()) / max(1e-8, vol_map.max() - vol_map.min())
+
+    p1 = out_dir / "3D_volumetric_graph_normalized.png"
+    if not skip or not p1.is_file():
+        save_3d_surface(X, Y, norm, "Normalized Infarct Intensity",
+                        f"3D Volumetric Graph (Normalized) | Total {mm3:.2f} mm^3", str(p1))
+
+    p2 = out_dir / "3D_surface_physical_totalZ.png"
+    if not skip or not p2.is_file():
+        save_3d_surface(X, Y, vol_map, "Volume (mm^3 per pixel)",
+                        f"3D Surface (Physical Z) | Total {mm3:.2f} mm^3", str(p2))
+
+    p3 = out_dir / "3D_infarct_mesh.png"
+    if not skip or not p3.is_file():
+        save_marching_cubes_mesh(mask_vol, dy, dx, dz, mm3, str(p3))
+
+    return str(p1), str(p2), str(p3)
+
+
+def finalize_pipeline_output(out_dir, image_dir=None, export_nifti=True, do_3d=True,
+                             skip_existing=True, iso_level=0.5):
+    out_dir = Path(out_dir)
+    dy, dx, dz, mm3 = read_spacing(out_dir)
+    masks = load_masks(out_dir / "masks")
+    if not masks:
+        raise FileNotFoundError(f"No masks in {out_dir / 'masks'}")
+
+    probs = load_prob_slices(out_dir)
+    mask_vol = stack_slices(masks)
+    prob_vol = stack_slices(probs)
+    vol_map = sum_volume_map(masks, dy, dx, dz)
+    if mm3 is None:
+        mm3 = float(mask_vol.sum()) * dy * dx * dz
 
     saved = {}
-    image_dir = Path(image_dir) if image_dir else None
-    atlas_dir = Path(atlas_dir) if atlas_dir and Path(atlas_dir).is_dir() else None
+    if export_nifti and HAVE_NIB:
+        saved.update(write_nifti(str(out_dir), prob_vol, mask_vol.astype(np.uint8), dy, dx, dz))
 
-    if build_combined_overlay is not None and image_dir is not None:
-        fig_overlay = build_combined_overlay(
-            masks_dir, image_dir, dy, dx, dz, atlas_dir=atlas_dir,
-        )
-        if fig_overlay is not None:
-            p = os.path.join(output_dir, "3D_combined_overlay.html")
-            fig_overlay.write_html(p, include_plotlyjs=PLOTLY_JS_SOURCE, full_html=True)
-            saved["3D_combined_overlay"] = p
+    hmap = out_dir / "infarct_probability_heatmap.png"
+    if not skip_existing or not hmap.is_file():
+        save_heatmap(prob_vol, str(hmap))
+    saved["infarct_probability_heatmap"] = str(hmap)
 
-    if build_plotly_mesh_from_masks is not None:
-        fig_mesh = build_plotly_mesh_from_masks(masks_dir, dy, dx, dz)
-        if fig_mesh is not None:
-            p = os.path.join(output_dir, "3D_infarct_mesh.html")
-            fig_mesh.write_html(p, include_plotlyjs=PLOTLY_JS_SOURCE, full_html=True)
-            saved["3D_infarct_mesh_html"] = p
+    dens = out_dir / "voxel_density_map.png"
+    if not skip_existing or not dens.is_file():
+        save_density_map(prob_vol, dy, dx, dz, str(dens))
+    saved["voxel_density_map"] = str(dens)
 
-    if build_plotly_surface_from_masks is not None:
-        fig_surface = build_plotly_surface_from_masks(masks_dir, dy, dx, dz)
-        if fig_surface is not None:
-            p = os.path.join(output_dir, "3D_surface.html")
-            fig_surface.write_html(p, include_plotlyjs=PLOTLY_JS_SOURCE, full_html=True)
-            saved["3D_surface_html"] = p
+    if image_dir and Path(image_dir).is_dir():
+        (out_dir / "overlays").mkdir(exist_ok=True)
+        slices = _list_slices(image_dir)
+        for i, sp in enumerate(slices):
+            if i >= len(probs):
+                break
+            op = out_dir / "overlays" / f"overlay_{i:03d}.png"
+            if skip_existing and op.is_file():
+                continue
+            save_overlay(_read_gray(sp), probs[i], str(op))
+
+    if do_3d:
+        p1, p2, p3 = save_3d_plots(out_dir, vol_map, mask_vol, dy, dx, dz, mm3, skip_existing)
+        saved["3D_volumetric_graph_normalized"] = p1
+        saved["3D_surface_physical_totalZ"] = p2
+        saved["3D_infarct_mesh"] = p3
+        iso = out_dir / "3D_mayavi_isosurface.png"
+        if not skip_existing or not iso.is_file():
+            save_mayavi_iso(prob_vol, dy, dx, dz, str(iso), iso_level)
+        saved["3D_mayavi_isosurface"] = str(iso)
 
     return saved
 
 
-def save_stats_plot(fig, out_path=None, stem="plot"):
-    """Save a matplotlib figure into workspace/stats_output."""
-    from datetime import datetime
+def save_mri_matplotlib_plots(out_dir, raw_vis, vol_map, mask_stack, mm3, dy, dx, dz, do_3d=True):
+    os.makedirs(out_dir, exist_ok=True)
+    stacked = os.path.join(out_dir, "stacked_jet_image.png")
+    save_stacked_jet(raw_vis, stacked)
+    if not do_3d or vol_map is None:
+        return {"stacked_jet_image": stacked}
+    H, W = vol_map.shape
+    x = np.linspace(0, W * dx, W); y = np.linspace(0, H * dy, H)
+    X, Y = np.meshgrid(x, y)
+    norm = (vol_map - vol_map.min()) / max(1e-8, vol_map.max() - vol_map.min())
+    g1 = os.path.join(out_dir, "3D_volumetric_graph_normalized.png")
+    g2 = os.path.join(out_dir, "3D_surface_physical_totalZ.png")
+    g3 = os.path.join(out_dir, "3D_infarct_mesh.png")
+    save_3d_surface(X, Y, norm, "Normalized Infarct Intensity",
+                    f"3D Volumetric Graph (Normalized) | Total {mm3:.2f} mm^3", g1)
+    save_3d_surface(X, Y, vol_map, "Volume (mm^3 per pixel)",
+                    f"3D Surface (Physical Z) | Total {mm3:.2f} mm^3", g2)
+    save_marching_cubes_mesh(np.stack(mask_stack), dy, dx, dz, mm3, g3)
+    return {"stacked_jet_image": stacked, "3D_volumetric_graph_normalized": g1,
+            "3D_surface_physical_totalZ": g2, "3D_infarct_mesh": g3}
 
-    STATS_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+def save_mri_plotly_html(out_dir, masks_dir, dy, dx, dz, image_dir=None, atlas_dir=None,
+                         build_combined_overlay=None, build_plotly_mesh_from_masks=None,
+                         build_plotly_surface_from_masks=None):
+    os.makedirs(out_dir, exist_ok=True)
+    masks_dir = Path(masks_dir)
+    if not masks_dir.is_dir():
+        return {}
+    saved = {}
+    image_dir = Path(image_dir) if image_dir else None
+    atlas_dir = Path(atlas_dir) if atlas_dir and Path(atlas_dir).is_dir() else None
+    if build_combined_overlay and image_dir:
+        fig = build_combined_overlay(masks_dir, image_dir, dy, dx, dz, atlas_dir=atlas_dir)
+        if fig:
+            p = os.path.join(out_dir, "3D_combined_overlay.html")
+            fig.write_html(p, include_plotlyjs=PLOTLY_JS_SOURCE, full_html=True)
+            saved["3D_combined_overlay"] = p
+    if build_plotly_mesh_from_masks:
+        fig = build_plotly_mesh_from_masks(masks_dir, dy, dx, dz)
+        if fig:
+            p = os.path.join(out_dir, "3D_infarct_mesh.html")
+            fig.write_html(p, include_plotlyjs=PLOTLY_JS_SOURCE, full_html=True)
+            saved["3D_infarct_mesh_html"] = p
+    if build_plotly_surface_from_masks:
+        fig = build_plotly_surface_from_masks(masks_dir, dy, dx, dz)
+        if fig:
+            p = os.path.join(out_dir, "3D_surface.html")
+            fig.write_html(p, include_plotlyjs=PLOTLY_JS_SOURCE, full_html=True)
+            saved["3D_surface_html"] = p
+    return saved
+
+
+def save_stats_plot(fig, out_path=None, stem="plot"):
+    from datetime import datetime
     if out_path is None:
-        out_path = STATS_OUTPUT_DIR / f"{stem}_{datetime.now():%Y%m%d_%H%M%S}.png"
+        out_path = os.path.join(PLOTS_DIR, f"{stem}_{datetime.now():%Y%m%d_%H%M%S}.png")
     else:
-        out_path = Path(out_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+        os.makedirs(os.path.dirname(out_path) or PLOTS_DIR, exist_ok=True)
     fig.savefig(out_path, dpi=200, bbox_inches="tight", facecolor="white")
     plt.close(fig)
-    return str(out_path)
+    return out_path
+
+
+def _list_slices(folder):
+    exts = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".dcm")
+    files = [p for p in Path(folder).iterdir() if p.suffix.lower() in exts and not p.name.startswith("._")]
+    files.sort(key=_slice_key)
+    return [str(p) for p in files]
+
+
+def _slice_key(path):
+    name = Path(path).name.lower()
+    if name.endswith(".dcm"):
+        try:
+            import pydicom
+            ds = pydicom.dcmread(str(path), stop_before_pixels=True, force=True)
+            ipp = getattr(ds, "ImagePositionPatient", None)
+            if ipp is not None: return (0, float(ipp[2]))
+            inst = getattr(ds, "InstanceNumber", None)
+            if inst is not None: return (0, float(inst))
+        except Exception:
+            pass
+        return (0, float("inf"))
+    nums = re.findall(r"\d+", name)
+    return (1, float(nums[-1]) if nums else float("inf"))
+
+
+def _read_gray(path):
+    if str(path).lower().endswith(".dcm"):
+        import pydicom
+        a = pydicom.dcmread(path, force=True).pixel_array.astype(np.float32)
+        return (a - a.min()) / max(1e-8, a.max() - a.min())
+    img = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise ValueError(path)
+    return img.astype(np.float32) / 255.0
+
+
+extract_probability = squeeze_prob
+resize_probability = resize_prob
+stack_volume_slices = stack_slices
+aggregate_probability_map = sum_volume_map
+save_probability_heatmap = save_heatmap
+save_voxel_density_map = save_density_map
+save_nifti_volumes = write_nifti
+save_mayavi_isosurface = save_mayavi_iso
+save_anatomy_overlay = save_overlay
+save_probability_slice = save_prob_png
+load_mask_stack_from_pipeline = load_masks
+
+
+def load_spacing_from_pipeline(out_dir):
+    dy, dx, dz, mm3 = read_spacing(out_dir)
+    return {"dy": dy, "dx": dx, "dz": dz, "total_mm3": mm3}
+
+
+def load_probability_stack_from_pipeline(prob_dir, masks_dir=None, threshold=127):
+    base = Path(masks_dir).parent if masks_dir else Path(prob_dir)
+    return load_prob_slices(base, threshold)
+
+
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("output_dir")
+    ap.add_argument("--image-dir", default=None)
+    ap.add_argument("--no-nifti", action="store_true")
+    ap.add_argument("--no-3d", action="store_true")
+    ap.add_argument("--overwrite", action="store_true")
+    a = ap.parse_args()
+    for k, v in finalize_pipeline_output(
+        a.output_dir, image_dir=a.image_dir, export_nifti=not a.no_nifti,
+        do_3d=not a.no_3d, skip_existing=not a.overwrite,
+    ).items():
+        print(k, v)
