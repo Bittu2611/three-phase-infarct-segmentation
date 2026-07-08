@@ -1,0 +1,185 @@
+# MRI / stats plot generation
+
+import os
+from pathlib import Path
+
+import cv2
+import numpy as np
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from skimage import measure
+
+STATS_OUTPUT_DIR = Path.home() / "AbhishekAI" / "workspace" / "stats_output"
+PLOTLY_JS_SOURCE = True
+
+
+def save_side_by_side(raw_img, mask_img, title, out_path):
+    fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+    axs[0].imshow(raw_img, cmap="gray")
+    axs[0].axis("off")
+    axs[0].set_title("Raw")
+    axs[1].imshow(mask_img, cmap="gray")
+    axs[1].axis("off")
+    axs[1].set_title("Mask")
+    fig.suptitle(title)
+    plt.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+
+def save_stacked_jet(raw_vis, out_path):
+    stack = np.array(raw_vis)
+    cum = np.sum(stack, axis=0)
+    cum = (cum - cum.min()) / max(1e-8, cum.max() - cum.min())
+    jet_img = plt.cm.jet(cum)
+    plt.figure(figsize=(6, 6))
+    plt.imshow(jet_img)
+    plt.axis("off")
+    plt.title("Stacked Raw (Jet)")
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+
+
+def save_3d_surface(X, Y, Z, zlabel, title, out_path):
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection="3d")
+    surf = ax.plot_surface(X, Y, Z, cmap="jet", alpha=0.9)
+    ax.set_xlabel("X (mm)")
+    ax.set_ylabel("Y (mm)")
+    ax.set_zlabel(zlabel)
+    ax.set_title(title)
+    fig.colorbar(surf, shrink=0.5, aspect=10)
+    plt.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+
+def save_marching_cubes_mesh(mask_vol_small, dy, dx, dz, total_mm3, out_path):
+    try:
+        verts, faces, normals, values = measure.marching_cubes(
+            volume=mask_vol_small.astype(np.float32),
+            level=0.5,
+            spacing=(dz, dy, dx),
+        )
+    except Exception:
+        return
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection="3d")
+    mesh = Poly3DCollection(verts[faces], alpha=0.7)
+    mesh.set_facecolor("red")
+    ax.add_collection3d(mesh)
+    zmax = mask_vol_small.shape[0] * dz
+    ymax = mask_vol_small.shape[1] * dy
+    xmax = mask_vol_small.shape[2] * dx
+    ax.set_xlim(0, xmax)
+    ax.set_ylim(0, ymax)
+    ax.set_zlim(0, zmax)
+    ax.set_xlabel("X (mm)")
+    ax.set_ylabel("Y (mm)")
+    ax.set_zlabel("Z (mm)")
+    ax.set_title(f"3D Infarct Mesh | Total Volume = {total_mm3:.2f} mm³")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+
+def save_mri_matplotlib_plots(output_dir, raw_vis, volume_map_accum, mask_small_stack,
+                              total_volume_mm3, dy, dx, dz, do_3d=True):
+    """Write standard MRI PNG outputs into output_dir."""
+    os.makedirs(output_dir, exist_ok=True)
+    stacked_path = os.path.join(output_dir, "stacked_jet_image.png")
+    save_stacked_jet(raw_vis, stacked_path)
+
+    if not do_3d or volume_map_accum is None:
+        return {
+            "stacked_jet_image": stacked_path,
+        }
+
+    hvm, wvm = volume_map_accum.shape
+    x = np.linspace(0, wvm * dx, wvm)
+    y = np.linspace(0, hvm * dy, hvm)
+    X, Y = np.meshgrid(x, y)
+    vm = volume_map_accum
+    vm_norm = (vm - vm.min()) / max(1e-8, vm.max() - vm.min())
+
+    vol_graph = os.path.join(output_dir, "3D_volumetric_graph_normalized.png")
+    surface_phys = os.path.join(output_dir, "3D_surface_physical_totalZ.png")
+    mesh_png = os.path.join(output_dir, "3D_infarct_mesh.png")
+
+    save_3d_surface(
+        X, Y, vm_norm, "Normalized Infarct Intensity",
+        f"3D Volumetric Graph (Normalized) | Total {total_volume_mm3:.2f} mm^3",
+        vol_graph,
+    )
+    save_3d_surface(
+        X, Y, vm, "Volume (mm^3 per pixel)",
+        f"3D Surface (Physical Z) | Total {total_volume_mm3:.2f} mm^3",
+        surface_phys,
+    )
+    mask_small_vol = np.stack(mask_small_stack, axis=0)
+    save_marching_cubes_mesh(mask_small_vol, dy, dx, dz, total_volume_mm3, mesh_png)
+
+    return {
+        "stacked_jet_image": stacked_path,
+        "3D_volumetric_graph_normalized": vol_graph,
+        "3D_surface_physical_totalZ": surface_phys,
+        "3D_infarct_mesh": mesh_png,
+    }
+
+
+def save_mri_plotly_html(output_dir, masks_dir, dy, dx, dz,
+                         image_dir=None, atlas_dir=None,
+                         build_combined_overlay=None,
+                         build_plotly_mesh_from_masks=None,
+                         build_plotly_surface_from_masks=None):
+    """Write interactive Plotly HTML files into output_dir."""
+    os.makedirs(output_dir, exist_ok=True)
+    masks_dir = Path(masks_dir)
+    if not masks_dir.is_dir():
+        return {}
+
+    saved = {}
+    image_dir = Path(image_dir) if image_dir else None
+    atlas_dir = Path(atlas_dir) if atlas_dir and Path(atlas_dir).is_dir() else None
+
+    if build_combined_overlay is not None and image_dir is not None:
+        fig_overlay = build_combined_overlay(
+            masks_dir, image_dir, dy, dx, dz, atlas_dir=atlas_dir,
+        )
+        if fig_overlay is not None:
+            p = os.path.join(output_dir, "3D_combined_overlay.html")
+            fig_overlay.write_html(p, include_plotlyjs=PLOTLY_JS_SOURCE, full_html=True)
+            saved["3D_combined_overlay"] = p
+
+    if build_plotly_mesh_from_masks is not None:
+        fig_mesh = build_plotly_mesh_from_masks(masks_dir, dy, dx, dz)
+        if fig_mesh is not None:
+            p = os.path.join(output_dir, "3D_infarct_mesh.html")
+            fig_mesh.write_html(p, include_plotlyjs=PLOTLY_JS_SOURCE, full_html=True)
+            saved["3D_infarct_mesh_html"] = p
+
+    if build_plotly_surface_from_masks is not None:
+        fig_surface = build_plotly_surface_from_masks(masks_dir, dy, dx, dz)
+        if fig_surface is not None:
+            p = os.path.join(output_dir, "3D_surface.html")
+            fig_surface.write_html(p, include_plotlyjs=PLOTLY_JS_SOURCE, full_html=True)
+            saved["3D_surface_html"] = p
+
+    return saved
+
+
+def save_stats_plot(fig, out_path=None, stem="plot"):
+    """Save a matplotlib figure into workspace/stats_output."""
+    from datetime import datetime
+
+    STATS_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if out_path is None:
+        out_path = STATS_OUTPUT_DIR / f"{stem}_{datetime.now():%Y%m%d_%H%M%S}.png"
+    else:
+        out_path = Path(out_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    return str(out_path)
